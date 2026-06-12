@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 运行时数据
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 任务产物（全部忽略）
+tasks/
+
+# 外部依赖脚本（不在本仓库）
+Scripts/
+
+# 缓存
+.agnes_cache/
+__pycache__/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+app.log
+nohup.out
+
+# 敏感信息
+.env
+.env.local
+*.key
+*.pem
+config.local.py
+
+# 临时
+*.tmp
+*.bak
+~*

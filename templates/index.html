@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>多模态随心生成</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- ====== Header ====== -->
+    <header class="app-header">
+      <div class="app-logo">
+        <div class="app-logo-icon">AI</div>
+        <div>
+          <div class="app-logo-text">多模态随心生成</div>
+        </div>
+      </div>
+      <div class="header-stats" id="headerStats">
+        <div class="stat-pill">
+          <span class="stat-pill-dot running"></span>
+          <span>运行 <span class="stat-pill-value" id="statRunning">0</span></span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-pill-dot"></span>
+          <span>成功 <span class="stat-pill-value" id="statSuccess">0</span></span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-pill-dot failed"></span>
+          <span>失败 <span class="stat-pill-value" id="statFailed">0</span></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ====== Main ====== -->
+    <main class="app-main">
+      <!-- Tabs -->
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-type="image" role="tab">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          图片生成
+          <span class="tab-count" id="countImage">0</span>
+        </button>
+        <button class="tab" data-type="video" role="tab">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+          视频生成
+          <span class="tab-count" id="countVideo">0</span>
+        </button>
+        <button class="tab" data-type="text" role="tab">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <path d="M8 9h8"/>
+            <path d="M8 13h5"/>
+          </svg>
+          提示词生成
+          <span class="tab-count" id="countText">0</span>
+        </button>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="filter-pill active" data-filter="all">全部</button>
+          <button class="filter-pill" data-filter="running">运行中</button>
+          <button class="filter-pill" data-filter="success">成功</button>
+          <button class="filter-pill" data-filter="failed">失败</button>
+          <button class="filter-pill" data-filter="pending">排队</button>
+        </div>
+        <button class="btn btn-primary" id="btnNewTask">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          新建任务
+        </button>
+      </div>
+
+      <!-- Task Table -->
+      <div class="task-table" id="taskTable">
+        <div class="task-table-empty" id="emptyState">
+          <div class="task-table-empty-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+          </div>
+          <div class="task-table-empty-title">还没有任务</div>
+          <div class="task-table-empty-desc">点击右上角"新建任务"开始第一次生成</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ====== 新建任务抽屉 ====== -->
+  <div class="drawer-overlay" id="drawerOverlay"></div>
+  <aside class="drawer" id="drawer">
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        <span id="drawerTitle">新建任务</span>
+      </div>
+      <button class="drawer-close" id="drawerClose" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <form id="newTaskForm">
+        <!-- 任务名 -->
+        <div class="form-group">
+          <label class="form-label form-label-required">任务名</label>
+          <input type="text" class="form-input" name="name" placeholder="如：古典美人烛下读卷" required maxlength="60">
+        </div>
+
+        <!-- 类型 -->
+        <div class="form-group">
+          <label class="form-label form-label-required">类型</label>
+          <div class="radio-group" id="typeGroup">
+            <label class="radio-card selected" data-value="image">
+              <input type="radio" name="type" value="image" checked>
+              <div class="radio-card-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+              </div>
+              <div class="radio-card-text">
+                <div class="radio-card-title">图片</div>
+                <div class="radio-card-desc">15-30秒</div>
+              </div>
+            </label>
+            <label class="radio-card" data-value="video">
+              <input type="radio" name="type" value="video">
+              <div class="radio-card-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="23 7 16 12 23 17 23 7"/>
+                  <rect x="1" y="5" width="15" height="14" rx="2"/>
+                </svg>
+              </div>
+              <div class="radio-card-text">
+                <div class="radio-card-title">视频</div>
+                <div class="radio-card-desc">5-10分钟</div>
+              </div>
+            </label>
+            <label class="radio-card" data-value="text">
+              <input type="radio" name="type" value="text">
+              <div class="radio-card-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  <path d="M8 9h8"/>
+                  <path d="M8 13h5"/>
+                </svg>
+              </div>
+              <div class="radio-card-text">
+                <div class="radio-card-title">提示词</div>
+                <div class="radio-card-desc">3-10秒</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 模型 -->
+        <div class="form-group">
+          <label class="form-label">调用模型</label>
+          <select class="form-select" name="model" id="modelSelect">
+            <!-- 动态填充 -->
+          </select>
+        </div>
+
+        <!-- 提示词 -->
+        <div class="form-group" id="formGroupPrompt">
+          <label class="form-label form-label-required">提示词</label>
+          <textarea class="form-textarea" name="prompt" placeholder="描述你想要生成的内容..." required></textarea>
+          <div class="form-hint">支持中英文，越具体效果越好</div>
+        </div>
+
+        <!-- 图片参数 -->
+        <div id="imageParams">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">尺寸</label>
+              <select class="form-select" name="size">
+                <option value="1024x1024">1024 × 1024（方形）</option>
+                <option value="1024x1280" selected>1024 × 1280（竖版人像）</option>
+                <option value="1280x1024">1280 × 1024（横版人像）</option>
+                <option value="1024x768">1024 × 768（横版 4:3）</option>
+                <option value="768x1024">768 × 1024（竖版 4:3）</option>
+                <option value="1536x1024">1536 × 1024（大横版）</option>
+                <option value="2048x2048">2048 × 2048（超清）</option>
+                <option value="512x512">512 × 512（快速）</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">生成数量</label>
+              <select class="form-select" name="count">
+                <option value="1" selected>1 张</option>
+                <option value="2">2 张</option>
+                <option value="3">3 张</option>
+                <option value="4">4 张</option>
+                <option value="5">5 张（最多）</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">自定义名称（可选）</label>
+              <input type="text" class="form-input" name="custom_name" placeholder="留空则用任务ID" maxlength="40">
+              <div class="form-hint">多张时自动加 _1/_2 后缀</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">生成后操作</label>
+              <label class="checkbox-row">
+                <input type="checkbox" name="send_feishu" value="1">
+                <span>自动发送到飞书</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视频参数 -->
+        <div id="videoParams" style="display: none;">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">宽度</label>
+              <input type="number" class="form-input" name="width" value="1152">
+            </div>
+            <div class="form-group">
+              <label class="form-label">高度</label>
+              <input type="number" class="form-input" name="height" value="768">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">帧数（≤441, 8n+1）</label>
+              <input type="number" class="form-input" name="num_frames" value="121">
+            </div>
+            <div class="form-group">
+              <label class="form-label">帧率 (FPS)</label>
+              <input type="number" class="form-input" name="frame_rate" value="24" min="1" max="60">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">负向提示词（可选）</label>
+            <input type="text" class="form-input" name="negative_prompt" placeholder="描述要避免的内容">
+          </div>
+        </div>
+
+        <!-- 文本/提示词参数 -->
+        <div id="textParams" style="display: none;">
+          <div class="form-group">
+            <label class="form-label form-label-required">需求描述</label>
+            <textarea class="form-textarea" name="input_text" placeholder="如：一只穿西装的猫在月球上喝咖啡，需要 3-5 条针对图生成优化的中文提示词" rows="4" required></textarea>
+            <div class="form-hint">Agnes 2.0 Flash 会基于你的需求生成 3-5 条高质量提示词（这就是产出）</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">参考图（可选，多模态理解）</label>
+            <div class="upload-row">
+              <label class="upload-drop" id="refImageDrop">
+                <input type="file" id="refImageFile" accept="image/png,image/jpeg,image/webp" hidden>
+                <div class="upload-drop-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                </div>
+                <div class="upload-drop-text">点击或拖拽上传图片</div>
+                <div class="upload-drop-hint">PNG / JPG / WebP · 最大 10MB</div>
+              </label>
+              <div class="upload-preview" id="refImagePreview" style="display: none;">
+                <img id="refImageThumb" src="" alt="预览">
+                <div class="upload-preview-actions">
+                  <button type="button" class="btn btn-ghost btn-sm" id="refImageClear">清除</button>
+                </div>
+              </div>
+            </div>
+            <div class="upload-or">或</div>
+            <input type="text" class="form-input" name="input_image" id="refImageUrl" placeholder="图片公网 URL">
+            <div class="form-hint">本地文件会传到服务器（多模态提示词需要图片）</div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">
+                随机性 temperature
+                <span class="label-tip" data-tip="控制模型选词的"分散度"：0=死板可重复，0.7=平衡（推荐），1.5+=天马行空不可控。">?</span>
+              </label>
+              <input type="number" class="form-input" name="temperature" value="0.7" step="0.1" min="0" max="2">
+              <div class="form-hint">0=可重复 · 1=平衡 · 2=不可控</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">最大 tokens</label>
+              <input type="number" class="form-input" name="max_tokens" value="1024" min="64" max="4096" step="64">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row">
+              <input type="checkbox" name="thinking" value="1">
+              <span>启用 Thinking 深度思考模式（耗时会显著增加）</span>
+            </label>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="drawer-footer">
+      <button class="btn btn-secondary" id="drawerCancel">取消</button>
+      <button class="btn btn-primary" id="drawerSubmit" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        提交任务
+      </button>
+    </div>
+  </aside>
+
+  <!-- ====== 任务详情模态框 ====== -->
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal" style="width: 640px;">
+      <div class="modal-header">
+        <div class="modal-title">任务详情</div>
+        <button class="drawer-close" id="detailClose" aria-label="关闭">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" id="detailBody">
+        <!-- 动态填充 -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="detailCopyPrompt">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          复制提示词
+        </button>
+        <button class="btn btn-primary" id="detailCloseBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 结果预览模态框 ====== -->
+  <div class="modal-overlay" id="previewModal">
+    <div class="modal" style="width: auto; max-width: 90vw;">
+      <div class="modal-header">
+        <div class="modal-title" id="previewTitle">结果预览</div>
+        <button class="drawer-close" id="previewClose" aria-label="关闭">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="result-preview" id="previewBody">
+          <!-- 动态填充 -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== Toast 容器 ====== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
