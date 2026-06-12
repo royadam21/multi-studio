@@ -199,32 +199,36 @@ def run_image_task(task: Dict[str, Any]):
 
 
 def run_video_task(task: Dict[str, Any]):
-    """运行视频任务：subprocess 调 agnes_video_gen.py，异步轮询"""
+    """运行视频任务：v5 submit-only 模式
+    流程：subprocess 调 agnes_video_gen.py --mode submit (几秒返回) → 拿 agnes task_id
+    写 db.remote_task_id + status=processing → 用户在前端点"查询"才走下载
+    """
     task_id = task['id']
     name = task['name']
     prompt = task['prompt']
     params = task.get('params', {})
     model = task['model']
-    
+
     # 默认参数
     width = params.get('width', config.DEFAULT_VIDEO_WIDTH)
     height = params.get('height', config.DEFAULT_VIDEO_HEIGHT)
     num_frames = params.get('num_frames', config.DEFAULT_VIDEO_NUM_FRAMES)
     frame_rate = params.get('frame_rate', config.DEFAULT_VIDEO_FRAME_RATE)
     negative_prompt = params.get('negative_prompt', '')
-    
+
     # 确保输出目录
     config.VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     log('INFO', f'[{task_id}] 启动视频任务: {name} | {model} | {width}x{height}')
-    
+
     db.update_task(task_id, status=config.STATUS_RUNNING, started_at=int(time.time() * 1000))
-    
+
     try:
-        # 构建 CLI 命令
+        # 构建 CLI 命令（v5: --mode submit，几秒返回）
         cmd = [
             sys.executable,
             str(config.AGNES_VIDEO_SCRIPT),
+            '--mode', 'submit',
             '--prompt', prompt,
             '--width', str(width),
             '--height', str(height),
@@ -234,63 +238,59 @@ def run_video_task(task: Dict[str, Any]):
         ]
         if negative_prompt:
             cmd.extend(['--negative', negative_prompt])
-        
-        log('INFO', f'[{task_id}] 执行: {" ".join(cmd[:6])}...')
-        
-        # 视频任务有 max-wait 参数（默认 900s = 15 分钟）
-        cmd.extend(['--max-wait', '900'])
-        
-        result = None
-        try:
-            result = _run_subprocess_windows(cmd, task_id)
-        except Exception as inner_e:
-            import traceback
-            tb = traceback.format_exc()
-            log('ERROR', f'[{task_id}] 视频 subprocess 异常: {inner_e}\n{tb}')
-            raise
-        
-        log('INFO', f'[{task_id}] 退出码: {result.returncode}')
+
+        log('INFO', f'[{task_id}] 提交视频任务（submit 模式，秒级返回）')
+
+        # submit 模式 3-10 秒就返回，不需要长 timeout
+        result = _run_subprocess_windows(cmd, task_id)
+
+        log('INFO', f'[{task_id}] submit 退出码: {result.returncode}')
         if result.returncode != 0:
-            log('ERROR', f'[{task_id}] 视频 stderr: {result.stderr[-500:] if result.stderr else "empty"}')
-        
-        if result.returncode == 0:
-            # 成功：解析输出找视频文件
-            output_path = _find_latest_video(config.VIDEOS_DIR)
-            if output_path:
-                db.update_task(
-                    task_id,
-                    status=config.STATUS_SUCCESS,
-                    result_path=str(output_path.relative_to(config.PROJECT_ROOT)),
-                    finished_at=int(time.time() * 1000),
-                )
-                log('SUCCESS', f'[{task_id}] 视频生成成功: {output_path.name}')
-            else:
-                # 退出 0 但没找到文件 → 可能是复用任务
-                db.update_task(
-                    task_id,
-                    status=config.STATUS_FAILED,
-                    error_msg='退出成功但未找到视频文件',
-                    finished_at=int(time.time() * 1000),
-                )
-                log('ERROR', f'[{task_id}] 视频文件未找到')
-        else:
-            error_msg = (result.stderr or result.stdout or '未知错误')[-500:]
+            error_text = (result.stderr or result.stdout or '未知错误')[-500:]
+            log('ERROR', f'[{task_id}] submit 失败: {error_text[:200]}')
             db.update_task(
                 task_id,
                 status=config.STATUS_FAILED,
-                error_msg=error_msg,
+                error_msg=f'submit 失败: {error_text}',
                 finished_at=int(time.time() * 1000),
             )
-            log('ERROR', f'[{task_id}] 视频生成失败: {error_msg[:200]}')
-    
+            return
+
+        # 解析 stdout 找 TASK_ID:xxx
+        agnes_task_id = None
+        for line in (result.stdout or '').splitlines():
+            line = line.strip()
+            if line.startswith('TASK_ID:'):
+                agnes_task_id = line.split(':', 1)[1].strip()
+                break
+
+        if not agnes_task_id:
+            log('ERROR', f'[{task_id}] submit 成功但未找到 TASK_ID 输出')
+            db.update_task(
+                task_id,
+                status=config.STATUS_FAILED,
+                error_msg='submit 成功但未返回 agnes task_id（脚本输出异常）',
+                finished_at=int(time.time() * 1000),
+            )
+            return
+
+        # 写 db：remote_task_id + status=running（让前端显示"已提交，待用户查询"）
+        db.update_task(
+            task_id,
+            status=config.STATUS_RUNNING,
+            remote_task_id=agnes_task_id,
+            error_msg=None,  # 清掉之前的 error
+        )
+        log('SUCCESS', f'[{task_id}] 视频已提交到 Agnes（task_id={agnes_task_id}），等待用户查询')
+
     except subprocess.TimeoutExpired:
         db.update_task(
             task_id,
             status=config.STATUS_FAILED,
-            error_msg=f'子进程超时（{config.SUBPROCESS_TIMEOUT}秒）',
+            error_msg=f'submit 子进程超时（{config.SUBPROCESS_TIMEOUT}秒）',
             finished_at=int(time.time() * 1000),
         )
-        log('ERROR', f'[{task_id}] 视频超时')
+        log('ERROR', f'[{task_id}] submit 超时')
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
@@ -303,7 +303,6 @@ def run_video_task(task: Dict[str, Any]):
         log('ERROR', f'[{task_id}] 视频异常: {e}\n{tb}')
 
 
-# ============== 文本/提示词任务 ==============
 def run_text_task(task: Dict[str, Any]):
     """运行文本/提示词生成任务（同步阻塞调 agnes_prompt_gen.py）"""
     task_id = task['id']

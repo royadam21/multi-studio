@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """多模态随心生成 · Flask 主入口"""
+import os
 import sys
 import time
 from pathlib import Path
+
+import requests
 
 # Windows 上强制 UTF-8 避免 GBK 与 emoji 冲突
 # Linux 默认 UTF-8 终端，无需 reconfigure
@@ -167,6 +170,139 @@ def api_retry_task(task_id):
     )
     
     return jsonify({'code': 0, 'data': db.get_task(task_id)})
+
+
+@app.route('/api/tasks/<task_id>/query', methods=['POST'])
+def api_query_task(task_id):
+    """查询视频任务进展（用户主动点击触发）
+    调用 agnes_video_gen.py --mode query <task_id>
+    - status=completed: 下载视频到本地 + 写 result_path + status=success
+    - status=failed: 写 error_msg + status=failed
+    - status=queued/in_progress: 弹'暂无进展'
+    """
+    task = db.get_task(task_id)
+    if not task:
+        return jsonify({'code': 404, 'msg': '任务不存在'}), 404
+
+    if task['type'] != 'video':
+        return jsonify({'code': 400, 'msg': '只有视频任务支持查询操作'}), 400
+
+    agnes_task_id = task.get('remote_task_id')
+    if not agnes_task_id:
+        return jsonify({'code': 400, 'msg': '任务尚未提交到 Agnes（无 remote_task_id）'}), 400
+
+    import subprocess
+    import re as re_mod
+
+    cmd = [
+        sys.executable,
+        str(config.AGNES_VIDEO_SCRIPT),
+        '--mode', 'query',
+        '--task-id', agnes_task_id,
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,  # query 模式 5 秒返回，60s 上限足够
+            env=os.environ.copy(),
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({'code': 504, 'msg': '查询超时（60s）'}), 504
+    except Exception as e:
+        return jsonify({'code': 500, 'msg': f'查询失败: {e}'}), 500
+
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or '未知错误')[-300:]
+        return jsonify({'code': 500, 'msg': f'子进程返回 {result.returncode}: {err}'}), 500
+
+    # 解析 stdout
+    status = None
+    progress = 0
+    video_url = None
+    for line in (result.stdout or '').splitlines():
+        line = line.strip()
+        if line.startswith('STATUS:'):
+            status = line.split(':', 1)[1].strip()
+        elif line.startswith('PROGRESS:'):
+            try:
+                progress = int(line.split(':', 1)[1].strip())
+            except ValueError:
+                progress = 0
+        elif line.startswith('VIDEO_URL:'):
+            video_url = line.split(':', 1)[1].strip()
+
+    if not status:
+        return jsonify({'code': 500, 'msg': '查询无响应'}), 500
+
+    # 状态分派
+    if status in ('completed', 'succeeded', 'success', 'done'):
+        if not video_url:
+            return jsonify({'code': 500, 'msg': '已完成但未返回 video_url'}), 500
+        # 下载到本地
+        try:
+            config.VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+            out_name = f'vid_{int(time.time())}_{agnes_task_id[-6:]}.mp4'
+            save_path = config.VIDEOS_DIR / out_name
+            with requests.get(video_url, stream=True, timeout=300) as r:
+                r.raise_for_status()
+                with open(save_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            f.write(chunk)
+        except Exception as e:
+            return jsonify({'code': 500, 'msg': f'下载失败: {e}'}), 500
+
+        # 写 db
+        result_path_rel = str(save_path.relative_to(config.PROJECT_ROOT))
+        db.update_task(
+            task_id,
+            status=config.STATUS_SUCCESS,
+            result_path=result_path_rel,
+            result_url=video_url,
+            finished_at=int(time.time() * 1000),
+        )
+        return jsonify({
+            'code': 0,
+            'data': {
+                'task_id': task_id,
+                'status': 'completed',
+                'progress': 100,
+                'video_url': video_url,
+                'result_path': result_path_rel,
+            },
+        })
+
+    elif status in ('failed', 'error', 'cancelled'):
+        db.update_task(
+            task_id,
+            status=config.STATUS_FAILED,
+            error_msg=f'Agnes 返回失败: {status}',
+            finished_at=int(time.time() * 1000),
+        )
+        return jsonify({
+            'code': 0,
+            'data': {
+                'task_id': task_id,
+                'status': 'failed',
+                'progress': progress,
+                'msg': 'Agnes 视频生成失败',
+            },
+        })
+
+    else:
+        # queued / in_progress / 其他 → 暂无进展
+        return jsonify({
+            'code': 0,
+            'data': {
+                'task_id': task_id,
+                'status': status,
+                'progress': progress,
+                'msg': f'暂无进展（{status}, {progress}%）',
+            },
+        })
 
 
 @app.route('/api/tasks/<task_id>', methods=['DELETE'])

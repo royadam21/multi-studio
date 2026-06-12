@@ -138,6 +138,7 @@ function renderTaskTable() {
         <td class="col-actions">
           <button class="btn btn-ghost btn-sm" data-action="detail" title="详情">详情</button>
           ${hasResult ? '<button class="btn btn-ghost btn-sm" data-action="preview" title="查看/复制结果">结果</button>' : ''}
+          ${t.type === 'video' && t.remote_task_id && t.status === 'running' ? '<button class="btn btn-ghost btn-sm" data-action="query" title="主动查询视频生成进展">查询</button>' : ''}
           <button class="btn btn-ghost btn-sm" data-action="copy" title="复制参数新建">复制</button>
           ${t.status === 'failed' ? '<button class="btn btn-ghost btn-sm" data-action="retry" title="重试">重试</button>' : ''}
           <button class="btn btn-ghost btn-sm" data-action="delete" title="删除">删除</button>
@@ -656,12 +657,66 @@ function setupTaskActions() {
       copyTask(taskId);
     } else if (action === 'preview') {
       showPreview(taskId);
+    } else if (action === 'query') {
+      await queryTask(taskId, btn);
     } else if (action === 'retry') {
       await retryTask(taskId);
     } else if (action === 'delete') {
       await deleteTask(taskId);
     }
   });
+}
+
+// queryTask: 主动查询视频生成进展（1分钟限频）
+const queryState = {};  // { taskId: { lastAt, pending } }
+async function queryTask(taskId, btn) {
+  const now = Date.now();
+  const s = queryState[taskId] || { lastAt: 0, pending: false };
+
+  // 限频：同一任务 1 分钟内只能查一次
+  if (s.pending) {
+    showToast('查询中，请稍候', 'info');
+    return;
+  }
+  if (now - s.lastAt < 60000) {
+    const wait = Math.ceil((60000 - (now - s.lastAt)) / 1000);
+    showToast(`${wait}s 后才能再查询`, 'info');
+    return;
+  }
+
+  // 锁定状态
+  queryState[taskId] = { lastAt: now, pending: true };
+  const oldText = btn.textContent;
+  btn.textContent = '查询中...';
+  btn.disabled = true;
+
+  try {
+    const r = await api(`/api/tasks/${taskId}/query`, { method: 'POST' });
+    if (r.code !== 0) {
+      showToast('查询失败: ' + r.msg, 'error');
+      return;
+    }
+    const d = r.data;
+    if (d.status === 'completed') {
+      showToast(`视频已生成！进度 100%`, 'success');
+    } else if (d.status === 'failed') {
+      showToast('Agnes 视频生成失败', 'error');
+    } else {
+      // queued / in_progress / 其他
+      showToast(d.msg || '暂无进展', 'info');
+    }
+    // 刷新列表
+    await loadTasks();
+  } catch (e) {
+    showToast('查询异常: ' + e.message, 'error');
+  } finally {
+    btn.textContent = oldText;
+    btn.disabled = false;
+    // pending 状态保持 3 秒（给网络请求 + 反馈显示用）
+    setTimeout(() => {
+      if (queryState[taskId]) queryState[taskId].pending = false;
+    }, 3000);
+  }
 }
 
 async function showDetail(taskId) {
