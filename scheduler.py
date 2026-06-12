@@ -490,7 +490,10 @@ def _run_subprocess_windows(cmd: list, task_id: str) -> subprocess.CompletedProc
         )
         
         try:
-            proc.wait(timeout=config.SUBPROCESS_TIMEOUT)
+            # 视频任务需要更长超时（视频生成 5-10 分钟 + 下载 2-3 分钟）
+            # image/text 默认 600 足够
+            timeout_sec = 1200 if task_id.startswith('vid_') else config.SUBPROCESS_TIMEOUT
+            proc.wait(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()

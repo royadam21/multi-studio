@@ -56,7 +56,10 @@ SCHEDULER_TICK = 1               # 后台扫描 pending 任务间隔（秒）
 VIDEO_POLL_INTERVAL = 30         # 视频任务 Agnes API 轮询间隔（秒）
 MAX_IMAGE_CONCURRENCY = 3        # 图片最大并发
 MAX_VIDEO_CONCURRENCY = 1        # 视频最大并发
-SUBPROCESS_TIMEOUT = 600         # 子进程超时（秒）
+# 视频模型生成 5-10 分钟，agnes_video_gen.py --max-wait 默认 900s
+# scheduler 必须 >= 900 + 启动+下载余量 = 1200
+# 图片/提示词 不需要 10 分钟，但仍用 600 走默认
+SUBPROCESS_TIMEOUT = 1200        # 子进程超时（秒）
 
 # ============== Agnes API ==============
 AGNES_API_KEY = os.environ.get('MMS_AGNES_KEY', '<YOUR_AGNES_API_KEY>')  # ⚠️ GitHub 上必须用环境变量，覆盖默认值
