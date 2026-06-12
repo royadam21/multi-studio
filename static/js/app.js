@@ -73,7 +73,7 @@ function showToast(msg, type = 'info', duration = 3000) {
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = '0';
-    toast.style.transform = 'translateX(100%)';
+    toast.style.transition = 'opacity 0.3s ease-in';
     setTimeout(() => toast.remove(), 300);
   }, duration);
 }
