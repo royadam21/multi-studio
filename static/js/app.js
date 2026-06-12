@@ -70,9 +70,9 @@ function showToast(msg, type = 'info', duration = 3000) {
   const old = document.getElementById('toastModal');
   if (old) old.remove();
 
-  const colors = { success: 'var(--success)', error: 'var(--danger)', info: 'var(--info)' };
-  const icons = { success: '✓', error: '✗', info: 'ℹ' };
-  const color = colors[type] || 'var(--info)';
+  const icons = { success: '✅', error: '❌', info: '💡' };
+  const borderColors = { success: 'var(--success)', error: 'var(--danger)', info: 'var(--info)' };
+  const bc = borderColors[type] || 'var(--info)';
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay open';
@@ -81,9 +81,9 @@ function showToast(msg, type = 'info', duration = 3000) {
   overlay.style.background = 'transparent';
   overlay.style.zIndex = '999999';
   overlay.innerHTML = `
-    <div class="modal" style="width: 380px; text-align: center; animation: toastFadeIn 0.2s ease-out;">
-      <div class="modal-body" style="padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 12px;">
-        <div style="width: 40px; height: 40px; border-radius: 50%; background: ${color}20; display: flex; align-items: center; justify-content: center; font-size: 18px; color: ${color};">${icons[type]}</div>
+    <div class="modal" style="width: 380px; text-align: center; animation: toastFadeIn 0.2s ease-out; border-left: 3px solid ${bc};">
+      <div class="modal-body" style="padding: 20px 24px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+        <div style="font-size: 28px; line-height: 1;">${icons[type]}</div>
         <div style="color: var(--text-primary); font-size: 14px; line-height: 1.5;">${msg}</div>
       </div>
     </div>
