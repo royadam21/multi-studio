@@ -55,7 +55,7 @@ POLL_INTERVAL = 3                # 任务状态刷新频率（前端轮询）
 SCHEDULER_TICK = 1               # 后台扫描 pending 任务间隔（秒）
 VIDEO_POLL_INTERVAL = 30         # 视频任务 Agnes API 轮询间隔（秒）
 MAX_IMAGE_CONCURRENCY = 3        # 图片最大并发
-MAX_VIDEO_CONCURRENCY = 1        # 视频最大并发
+MAX_VIDEO_CONCURRENCY = 3        # 视频最大并发（v5 submit 模式秒级返回，可多提交）
 # 视频模型生成 5-10 分钟，agnes_video_gen.py --max-wait 默认 900s
 # scheduler 必须 >= 900 + 启动+下载余量 = 1200
 # 图片/提示词 不需要 10 分钟，但仍用 600 走默认

@@ -66,17 +66,37 @@ function statusBadge(status) {
 }
 
 function showToast(msg, type = 'info', duration = 3000) {
-  const container = $('#toastContainer');
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = msg;
-  container.appendChild(toast);
+  // 通知弹窗 — 不用 fix 定位避免父容器干扰，直接弹 modal 遮罩
+  const old = document.getElementById('toastModal');
+  if (old) old.remove();
+
+  const colors = { success: 'var(--success)', error: 'var(--danger)', info: 'var(--info)' };
+  const icons = { success: '✓', error: '✗', info: 'ℹ' };
+  const color = colors[type] || 'var(--info)';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.id = 'toastModal';
+  overlay.style.backdropFilter = 'none';
+  overlay.style.background = 'transparent';
+  overlay.style.zIndex = '999999';
+  overlay.innerHTML = `
+    <div class="modal" style="width: 380px; text-align: center; animation: toastFadeIn 0.2s ease-out;">
+      <div class="modal-body" style="padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 12px;">
+        <div style="width: 40px; height: 40px; border-radius: 50%; background: ${color}20; display: flex; align-items: center; justify-content: center; font-size: 18px; color: ${color};">${icons[type]}</div>
+        <div style="color: var(--text-primary); font-size: 14px; line-height: 1.5;">${msg}</div>
+      </div>
+    </div>
+  `;
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
+
   setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transition = 'opacity 0.3s ease-in';
-    setTimeout(() => toast.remove(), 300);
+    if (overlay.parentNode) overlay.remove();
   }, duration);
 }
+
+/* toastFadeIn 定义在 style.css 中 */
 
 async function copyToClipboard(text, msg) {
   const successMsg = msg || '已复制到剪贴板';
