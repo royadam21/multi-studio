@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """多模态随心生成 · Flask 主入口"""
+import json
 import os
 import sys
 import time
@@ -175,7 +176,8 @@ def api_retry_task(task_id):
 @app.route('/api/tasks/<task_id>/query', methods=['POST'])
 def api_query_task(task_id):
     """查询视频任务进展（用户主动点击触发）
-    调用 agnes_video_gen.py --mode query <task_id>
+    - status=pending: 主动调 --mode submit 拿到 task_id 后直接 query
+    - status=running + 有 remote_task_id: 直接 --mode query
     - status=completed: 下载视频到本地 + 写 result_path + status=success
     - status=failed: 写 error_msg + status=failed
     - status=queued/in_progress: 弹'暂无进展'
@@ -187,13 +189,79 @@ def api_query_task(task_id):
     if task['type'] != 'video':
         return jsonify({'code': 400, 'msg': '只有视频任务支持查询操作'}), 400
 
+    if task['status'] in ('completed', 'success', 'failed'):
+        return jsonify({
+            'code': 0,
+            'data': {
+                'task_id': task_id,
+                'status': task['status'],
+                'progress': 100 if task['status'] in ('completed', 'success') else 0,
+                'msg': f'任务已结束（{task["status"]}）',
+            }
+        })
+
     agnes_task_id = task.get('remote_task_id')
+
+    # pending 或 running 但无 remote_task_id → 主动调 submit 提交
     if not agnes_task_id:
-        return jsonify({'code': 400, 'msg': '任务尚未提交到 Agnes（无 remote_task_id）'}), 400
+        import subprocess
+        params = json.loads(task.get('params') or '{}') if isinstance(task.get('params'), str) else (task.get('params') or {})
+        submit_cmd = [
+            sys.executable,
+            str(config.AGNES_VIDEO_SCRIPT),
+            '--mode', 'submit',
+            '--prompt', task.get('prompt', ''),
+            '--width', str(params.get('width', config.DEFAULT_VIDEO_WIDTH)),
+            '--height', str(params.get('height', config.DEFAULT_VIDEO_HEIGHT)),
+            '--num-frames', str(params.get('num_frames', config.DEFAULT_VIDEO_NUM_FRAMES)),
+            '--frame-rate', str(params.get('frame_rate', config.DEFAULT_VIDEO_FRAME_RATE)),
+            '--model', task.get('model', 'agnes-video-v2.0'),
+        ]
+        neg = params.get('negative_prompt')
+        if neg:
+            submit_cmd.extend(['--negative', neg])
 
+        try:
+            submit_result = subprocess.run(
+                submit_cmd,
+                capture_output=True, text=True, timeout=60,
+                env=os.environ.copy(),
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({'code': 504, 'msg': 'submit 提交超时（60s）'}), 504
+        except Exception as e:
+            return jsonify({'code': 500, 'msg': f'submit 失败: {e}'}), 500
+
+        if submit_result.returncode != 0:
+            err = (submit_result.stderr or submit_result.stdout or '未知错误')[-300:]
+            return jsonify({'code': 500, 'msg': f'submit 返回 {submit_result.returncode}: {err}'}), 500
+
+        # 解析 TASK_ID
+        for line in (submit_result.stdout or '').splitlines():
+            if line.strip().startswith('TASK_ID:'):
+                agnes_task_id = line.split(':', 1)[1].strip()
+                break
+
+        if not agnes_task_id:
+            return jsonify({'code': 500, 'msg': 'submit 成功但未返回 task_id'}), 500
+
+        # 写 db：remote_task_id + status=running
+        db.update_task(
+            task_id,
+            status=config.STATUS_RUNNING,
+            remote_task_id=agnes_task_id,
+            started_at=int(time.time() * 1000),
+        )
+        # 立刻走 query
+        return _do_agnes_query(task_id, agnes_task_id)
+
+    # running + 有 remote_task_id → 直接 query
+    return _do_agnes_query(task_id, agnes_task_id)
+
+
+def _do_agnes_query(task_id: str, agnes_task_id: str):
+    """实际执行 agnes --mode query，3 状态分派返回"""
     import subprocess
-    import re as re_mod
-
     cmd = [
         sys.executable,
         str(config.AGNES_VIDEO_SCRIPT),

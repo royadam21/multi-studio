@@ -138,7 +138,7 @@ function renderTaskTable() {
         <td class="col-actions">
           <button class="btn btn-ghost btn-sm" data-action="detail" title="详情">详情</button>
           ${hasResult ? '<button class="btn btn-ghost btn-sm" data-action="preview" title="查看/复制结果">结果</button>' : ''}
-          ${t.type === 'video' && t.remote_task_id && t.status === 'running' ? '<button class="btn btn-ghost btn-sm" data-action="query" title="主动查询视频生成进展">查询</button>' : ''}
+          ${t.type === 'video' && (t.status === 'pending' || (t.status === 'running' && t.remote_task_id)) ? '<button class="btn btn-ghost btn-sm" data-action="query" title="主动查询视频生成进展">查询</button>' : ''}
           <button class="btn btn-ghost btn-sm" data-action="copy" title="复制参数新建">复制</button>
           ${t.status === 'failed' ? '<button class="btn btn-ghost btn-sm" data-action="retry" title="重试">重试</button>' : ''}
           <button class="btn btn-ghost btn-sm" data-action="delete" title="删除">删除</button>
