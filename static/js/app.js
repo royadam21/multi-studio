@@ -691,12 +691,8 @@ async function queryTask(taskId, btn) {
   btn.disabled = true;
 
   try {
-    const r = await api(`/api/tasks/${taskId}/query`, { method: 'POST' });
-    if (r.code !== 0) {
-      showToast('查询失败: ' + r.msg, 'error');
-      return;
-    }
-    const d = r.data;
+    const d = await api(`/api/tasks/${taskId}/query`, { method: 'POST' });
+    // api() 已解构为 data.data，d 包含 {status, progress, msg, ...}
     if (d.status === 'completed') {
       showToast(`视频已生成！进度 100%`, 'success');
     } else if (d.status === 'failed') {
@@ -708,7 +704,7 @@ async function queryTask(taskId, btn) {
     // 刷新列表
     await loadTasks();
   } catch (e) {
-    showToast('查询异常: ' + e.message, 'error');
+    showToast('查询失败: ' + e.message, 'error');
   } finally {
     btn.textContent = oldText;
     btn.disabled = false;

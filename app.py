@@ -26,6 +26,16 @@ import scheduler
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
 
+@app.after_request
+def add_no_cache_headers(response):
+    """静态资源和 HTML 禁用浏览器缓存——避免部署后前端看到旧版"""
+    if request.path.startswith(('/static/', '/')) and not request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
+
 # ============== 页面 ==============
 @app.route('/')
 def index():
